@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from fastapi.middleware.cors import CORSMiddleware
 from . import models, schemas, crud
 from .database import Base, engine, SessionLocal
 import threading
@@ -12,19 +11,6 @@ from rabbitmq_utils import RabbitMQConsumer
 
 app = FastAPI()
 
-# Allow requests from frontend
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,       # frontend URLs allowed
-    allow_credentials=True,
-    allow_methods=["*"],         # allow all HTTP methods
-    allow_headers=["*"],         # allow all headers
-)
 # Create tables
 Base.metadata.create_all(bind=engine)
 

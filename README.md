@@ -1,6 +1,6 @@
 # Microservices Banking Application
 
-A modern banking application built with microservices architecture using FastAPI, React, Nginx Reverse Proxy, and RabbitMQ.
+A modern banking application built with microservices architecture using FastAPI, React, Nginx Reverse Proxy, and RabbitMQ with comprehensive resilience testing.
 
 ## Architecture Overview
 
@@ -27,6 +27,9 @@ This application consists of:
 - ✅ Reverse proxy for unified API access
 - ✅ Asynchronous message processing
 - ✅ Comprehensive error handling
+- ✅ **RabbitMQ Resilience Testing** - Message persistence, queue durability, automatic reconnection
+- ✅ **Service Failure Handling** - Graceful degradation when services are down
+- ✅ **Real-time Monitoring** - RabbitMQ Management UI for queue monitoring
 
 ## Tech Stack
 
@@ -40,7 +43,7 @@ This application consists of:
 - **Pika** - Python RabbitMQ client
 
 ### Infrastructure
-- **Nginx** - Reverse proxy and load balancer
+- **Nginx** - Reverse proxy and load balancer with CORS handling
 - **Docker** - Containerization
 - **Docker Compose** - Multi-container orchestration
 
@@ -62,6 +65,7 @@ microservices-banking-app/
 │   │   └── database.py    # Database configuration
 │   ├── db/
 │   │   └── users.db       # SQLite database
+│   ├── venv/              # Python virtual environment
 │   └── requirements.txt   # Python dependencies
 ├── account_service/       # Account management service
 │   ├── app/
@@ -72,6 +76,7 @@ microservices-banking-app/
 │   │   └── database.py
 │   ├── db/
 │   │   └── accounts.db
+│   ├── venv/              # Python virtual environment
 │   └── requirements.txt
 ├── transaction_service/    # Transaction processing service
 │   ├── app/
@@ -82,6 +87,8 @@ microservices-banking-app/
 │   │   └── database.py
 │   ├── db/
 │   │   └── transactions.db
+│   ├── rabbitmq_utils.py  # RabbitMQ utilities (copied from root)
+│   ├── venv/              # Python virtual environment
 │   └── requirements.txt
 ├── notification_service/   # Notification service
 │   ├── app/
@@ -92,13 +99,21 @@ microservices-banking-app/
 │   │   └── database.py
 │   ├── db/
 │   │   └── notifications.db
+│   ├── rabbitmq_utils.py  # RabbitMQ utilities (copied from root)
+│   ├── venv/              # Python virtual environment
 │   └── requirements.txt
-└── frontend/              # React frontend
-    ├── src/
-    │   ├── components/    # React components
-    │   └── services/      # API service functions
-    ├── package.json
-    └── package-lock.json
+├── frontend/              # React frontend
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   └── services/      # API service functions
+│   ├── package.json
+│   └── package-lock.json
+├── rabbitmq_utils.py     # Shared RabbitMQ utilities
+├── nginx.conf            # Nginx configuration with CORS
+├── docker-compose.yml    # Docker services configuration
+├── setup.sh             # Linux/Mac setup script
+├── setup.bat            # Windows setup script
+└── README.md            # This file
 ```
 
 ## Getting Started
@@ -130,10 +145,10 @@ microservices-banking-app/
 
 3. **Install Python dependencies**
    ```bash
-   cd user_service && pip install -r requirements.txt && cd ..
-   cd account_service && pip install -r requirements.txt && cd ..
-   cd transaction_service && pip install -r requirements.txt && cd ..
-   cd notification_service && pip install -r requirements.txt && cd ..
+   cd user_service && source venv/bin/activate && pip install -r requirements.txt && cd ..
+   cd account_service && source venv/bin/activate && pip install -r requirements.txt && cd ..
+   cd transaction_service && source venv/bin/activate && pip install -r requirements.txt && cd ..
+   cd notification_service && source venv/bin/activate && pip install -r requirements.txt && cd ..
    ```
 
 4. **Install Frontend dependencies**
@@ -155,18 +170,22 @@ microservices-banking-app/
    ```bash
    # Terminal 1 - User Service
    cd user_service
+   source venv/bin/activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
    # Terminal 2 - Account Service
    cd account_service
+   source venv/bin/activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 
    # Terminal 3 - Transaction Service
    cd transaction_service
+   source venv/bin/activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
 
    # Terminal 4 - Notification Service
    cd notification_service
+   source venv/bin/activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
    ```
 
@@ -218,6 +237,33 @@ microservices-banking-app/
 3. **Process Transactions**: Use the Transactions tab to perform deposits, withdrawals, or transfers
 4. **View Notifications**: Check the Notifications tab to see transaction alerts
 
+## RabbitMQ Resilience Testing
+
+The application includes comprehensive resilience testing capabilities:
+
+### Test Scenarios
+
+1. **Consumer Service Failure (Notification Service Down)**
+   - Messages are queued in RabbitMQ when the consumer is down
+   - No message loss occurs
+   - Messages are automatically processed when the service restarts
+
+2. **Publisher Service Failure (Transaction Service Down)**
+   - System returns 502 Bad Gateway when service is unavailable
+   - Service recovers normally after restart
+
+3. **RabbitMQ Broker Failure**
+   - Core business logic continues to work
+   - Transactions are processed and stored in database
+   - Notifications are queued and processed when RabbitMQ restarts
+
+### Monitoring
+
+- **RabbitMQ Management UI**: http://localhost:15672 (admin/admin123)
+- **Real-time Queue Monitoring**: Monitor message flow, queue health, and consumer status
+- **Message Persistence**: Messages survive broker restarts
+- **Automatic Reconnection**: Services automatically reconnect when RabbitMQ comes back online
+
 ## Development
 
 ### Adding New Features
@@ -235,6 +281,29 @@ Each service maintains its own SQLite database with the following tables:
 - **Transactions**: id, account_id, type, amount, target_account_id, timestamp
 - **Notifications**: id, user_id, message, timestamp
 
+### Key Configuration Changes
+
+1. **CORS Handling**: Centralized in Nginx configuration to prevent duplicate headers
+2. **Nginx Network Mode**: Uses `host` network mode for proper service communication
+3. **RabbitMQ Utilities**: Copied to transaction and notification services for proper imports
+4. **Database Directories**: Created `db/` directories in each service for SQLite databases
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Service Connection Refused**: Ensure all services are running and ports are available
+2. **CORS Errors**: Check Nginx configuration and ensure CORS headers are properly set
+3. **RabbitMQ Connection Issues**: Verify RabbitMQ container is running and accessible
+4. **Database Errors**: Ensure `db/` directories exist in each service
+
+### Logs and Monitoring
+
+- **Service Logs**: Check individual service terminal outputs
+- **Nginx Logs**: `docker logs banking_nginx`
+- **RabbitMQ Logs**: `docker logs banking_rabbitmq`
+- **RabbitMQ Management**: http://localhost:15672 for queue monitoring
+
 ## Contributing
 
 1. Fork the repository
@@ -249,12 +318,13 @@ This project is licensed under the MIT License.
 
 ## Future Enhancements
 
+- [x] Message queuing with RabbitMQ
+- [x] Docker containerization
+- [x] Comprehensive logging
+- [x] Service resilience testing
 - [ ] Authentication and authorization
-- [ ] Docker containerization
 - [ ] Kubernetes deployment
-- [ ] Message queuing with Redis/RabbitMQ
 - [ ] Database migration to PostgreSQL
 - [ ] API rate limiting
-- [ ] Comprehensive logging
 - [ ] Unit and integration tests
 - [ ] CI/CD pipeline
