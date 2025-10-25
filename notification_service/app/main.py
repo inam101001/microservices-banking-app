@@ -3,6 +3,12 @@ from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, schemas, crud
 from .database import Base, engine, SessionLocal
+import threading
+import json
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rabbitmq_utils import RabbitMQConsumer
 
 app = FastAPI()
 
@@ -22,6 +28,9 @@ app.add_middleware(
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Initialize RabbitMQ Consumer
+rabbitmq_consumer = RabbitMQConsumer()
+
 # Dependency to get DB session
 def get_db():
     db = SessionLocal()
@@ -33,6 +42,47 @@ def get_db():
 @app.get("/")
 def read_root():
     return {"message": "Notification Service is running"}
+
+def process_notification_message(ch, method, properties, body):
+    """Process incoming notification messages from RabbitMQ"""
+    try:
+        # Parse the message
+        data = json.loads(body)
+        user_id = data.get('user_id')
+        message = data.get('message')
+        
+        if user_id and message:
+            # Create notification in database
+            db = SessionLocal()
+            try:
+                notification_data = schemas.NotificationCreate(
+                    user_id=user_id,
+                    message=message
+                )
+                crud.create_notification(db, notification_data)
+                print(f"Created notification for user {user_id}: {message}")
+            finally:
+                db.close()
+        
+        # Acknowledge the message
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+    except Exception as e:
+        print(f"Error processing notification message: {e}")
+        # Reject the message and don't requeue it
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+
+def start_rabbitmq_consumer():
+    """Start consuming messages from RabbitMQ in a separate thread"""
+    try:
+        rabbitmq_consumer.setup_queue('notifications', 'transaction.completed')
+        rabbitmq_consumer.start_consuming('notifications', process_notification_message)
+    except Exception as e:
+        print(f"Error in RabbitMQ consumer: {e}")
+
+# Start RabbitMQ consumer in background thread
+consumer_thread = threading.Thread(target=start_rabbitmq_consumer, daemon=True)
+consumer_thread.start()
 
 # CRUD Endpoints
 @app.post("/notifications", response_model=schemas.NotificationResponse)
@@ -88,3 +138,9 @@ def delete_notification(notification_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete notification: {str(e)}")
+
+# Graceful shutdown
+@app.on_event("shutdown")
+def shutdown_event():
+    rabbitmq_consumer.stop_consuming()
+    rabbitmq_consumer.close()

@@ -1,27 +1,32 @@
 # Microservices Banking Application
 
-A modern banking application built with microservices architecture using FastAPI and React.
+A modern banking application built with microservices architecture using FastAPI, React, Nginx Reverse Proxy, and RabbitMQ.
 
 ## Architecture Overview
 
-This application consists of four microservices:
+This application consists of:
 
 - **User Service** (Port 8001) - Manages user accounts and profiles
 - **Account Service** (Port 8002) - Handles bank account management
 - **Transaction Service** (Port 8003) - Processes deposits, withdrawals, and transfers
-- **Notification Service** (Port 8004) - Sends notifications for transactions
+- **Notification Service** (Port 8004) - Consumes events and sends notifications
 - **Frontend** (Port 3000) - React-based user interface
+- **Nginx Reverse Proxy** (Port 80) - API Gateway and load balancer
+- **RabbitMQ** (Port 5672) - Message broker for event-driven communication
 
 ## Features
 
 - ✅ User registration and management
 - ✅ Bank account creation and management
 - ✅ Transaction processing (deposits, withdrawals, transfers)
-- ✅ Real-time notifications
-- ✅ Modern React frontend
+- ✅ Event-driven notifications via RabbitMQ
+- ✅ Modern React frontend with table layouts
 - ✅ RESTful API design
 - ✅ SQLite database for each service
 - ✅ CORS-enabled for frontend communication
+- ✅ Reverse proxy for unified API access
+- ✅ Asynchronous message processing
+- ✅ Comprehensive error handling
 
 ## Tech Stack
 
@@ -31,11 +36,18 @@ This application consists of four microservices:
 - **SQLite** - Lightweight database
 - **Pydantic** - Data validation and serialization
 - **Uvicorn** - ASGI server
+- **RabbitMQ** - Message broker for event-driven architecture
+- **Pika** - Python RabbitMQ client
+
+### Infrastructure
+- **Nginx** - Reverse proxy and load balancer
+- **Docker** - Containerization
+- **Docker Compose** - Multi-container orchestration
 
 ### Frontend
 - **React** - JavaScript library for building user interfaces
 - **Axios** - HTTP client for API communication
-- **CSS** - Styling
+- **CSS** - Styling with table layouts
 
 ## Project Structure
 
@@ -96,8 +108,9 @@ microservices-banking-app/
 - Python 3.8+
 - Node.js 14+
 - npm or yarn
+- Docker and Docker Compose
 
-### Installation
+### Quick Setup
 
 1. **Clone the repository**
    ```bash
@@ -105,93 +118,98 @@ microservices-banking-app/
    cd microservices-banking-app
    ```
 
-2. **Set up Backend Services**
-
-   For each service (user_service, account_service, transaction_service, notification_service):
-   
+2. **Run the setup script**
    ```bash
-   cd user_service
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
+   # On Linux/Mac
+   chmod +x setup.sh
+   ./setup.sh
+   
+   # On Windows
+   setup.bat
    ```
 
-3. **Set up Frontend**
+3. **Install Python dependencies**
    ```bash
-   cd frontend
-   npm install
+   cd user_service && pip install -r requirements.txt && cd ..
+   cd account_service && pip install -r requirements.txt && cd ..
+   cd transaction_service && pip install -r requirements.txt && cd ..
+   cd notification_service && pip install -r requirements.txt && cd ..
+   ```
+
+4. **Install Frontend dependencies**
+   ```bash
+   cd frontend && npm install && cd ..
    ```
 
 ### Running the Application
 
-1. **Start Backend Services**
+1. **Start Infrastructure Services**
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Start Backend Services**
 
    Open separate terminal windows for each service:
 
    ```bash
    # Terminal 1 - User Service
    cd user_service
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
    # Terminal 2 - Account Service
    cd account_service
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
 
    # Terminal 3 - Transaction Service
    cd transaction_service
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
 
    # Terminal 4 - Notification Service
    cd notification_service
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
    python -m uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
    ```
 
-2. **Start Frontend**
+3. **Start Frontend**
    ```bash
    cd frontend
    npm start
    ```
 
-3. **Access the Application**
+4. **Access the Application**
    - Frontend: http://localhost:3000
-   - User Service API: http://localhost:8001
-   - Account Service API: http://localhost:8002
-   - Transaction Service API: http://localhost:8003
-   - Notification Service API: http://localhost:8004
+   - API Gateway: http://localhost/api/users
+   - RabbitMQ Management: http://localhost:15672 (admin/admin123)
 
 ## API Endpoints
 
-### User Service (Port 8001)
-- `GET /` - Service status
-- `POST /users` - Create user
-- `GET /users` - Get all users
-- `GET /users/{user_id}` - Get user by ID
-- `DELETE /users/{user_id}` - Delete user
+### Via Reverse Proxy (Recommended)
+- `GET /api/users` - Get all users
+- `POST /api/users` - Create user
+- `GET /api/users/{user_id}` - Get user by ID
+- `DELETE /api/users/{user_id}` - Delete user
 
-### Account Service (Port 8002)
-- `GET /` - Service status
-- `POST /accounts` - Create account
-- `GET /accounts` - Get all accounts
-- `GET /accounts/{account_id}` - Get account by ID
-- `DELETE /accounts/{account_id}` - Delete account
+- `GET /api/accounts` - Get all accounts
+- `POST /api/accounts` - Create account
+- `GET /api/accounts/{account_id}` - Get account by ID
+- `PUT /api/accounts/{account_id}` - Update account balance
+- `DELETE /api/accounts/{account_id}` - Delete account
 
-### Transaction Service (Port 8003)
-- `GET /` - Service status
-- `POST /transactions` - Create transaction
-- `GET /transactions` - Get all transactions
-- `GET /transactions/{transaction_id}` - Get transaction by ID
-- `DELETE /transactions/{transaction_id}` - Delete transaction
+- `GET /api/transactions` - Get all transactions
+- `POST /api/transactions` - Create transaction
+- `GET /api/transactions/{transaction_id}` - Get transaction by ID
+- `DELETE /api/transactions/{transaction_id}` - Delete transaction
 
-### Notification Service (Port 8004)
-- `GET /` - Service status
-- `POST /notifications` - Create notification
-- `GET /notifications` - Get all notifications
-- `GET /notifications/{notification_id}` - Get notification by ID
-- `DELETE /notifications/{notification_id}` - Delete notification
+- `GET /api/notifications` - Get all notifications
+- `POST /api/notifications` - Create notification
+- `GET /api/notifications/{notification_id}` - Get notification by ID
+- `DELETE /api/notifications/{notification_id}` - Delete notification
+
+### Direct Service Access
+- User Service: http://localhost:8001
+- Account Service: http://localhost:8002
+- Transaction Service: http://localhost:8003
+- Notification Service: http://localhost:8004
 
 ## Usage
 

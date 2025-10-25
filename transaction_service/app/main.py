@@ -4,6 +4,10 @@ import requests
 from fastapi.middleware.cors import CORSMiddleware
 from . import models, schemas, crud
 from .database import Base, engine, SessionLocal
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rabbitmq_utils import RabbitMQPublisher
 
 app = FastAPI()
 
@@ -23,6 +27,9 @@ app.add_middleware(
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Initialize RabbitMQ Publisher
+rabbitmq_publisher = RabbitMQPublisher()
 
 # Dependency to get DB session
 def get_db():
@@ -63,16 +70,18 @@ def update_account_balance_in_service(account_id: int, new_balance: float):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Cannot connect to Account Service: {str(e)}")
 
-def send_notification(user_id: int, message: str):
-    """Helper function to send notification"""
+def publish_notification_event(user_id: int, message: str, transaction_id: int, transaction_type: str):
+    """Publish notification event to RabbitMQ"""
     try:
-        notification_payload = {
-            "user_id": user_id,
-            "message": message
+        event_data = {
+            'user_id': user_id,
+            'message': message,
+            'transaction_id': transaction_id,
+            'transaction_type': transaction_type
         }
-        requests.post("http://127.0.0.1:8004/notifications", json=notification_payload, timeout=5)
-    except requests.exceptions.RequestException as e:
-        print(f"Failed to send notification: {e}")  # Don't fail transaction for notification errors
+        rabbitmq_publisher.publish_message('transaction.completed', event_data)
+    except Exception as e:
+        print(f"Failed to publish notification event: {e}")  # Don't fail transaction for notification errors
 
 # --- CRUD Endpoints ---
 @app.post("/transactions", response_model=schemas.TransactionResponse)
@@ -120,7 +129,7 @@ def create_transaction(transaction: schemas.TransactionCreate, db: Session = Dep
             
             # Send notification to target account user
             target_message = f"Received transfer of ${transaction.amount:.2f} from account {transaction.account_id}. New balance: ${target_new_balance:.2f}"
-            send_notification(target_user_id, target_message)
+            publish_notification_event(target_user_id, target_message, 0, transaction.type)
 
         # Update source account balance
         update_account_balance_in_service(transaction.account_id, new_balance)
@@ -128,8 +137,8 @@ def create_transaction(transaction: schemas.TransactionCreate, db: Session = Dep
         # Create transaction record in database
         db_transaction = crud.create_transaction(db, transaction)
 
-        # Send notification to source account user
-        send_notification(user_id, message)
+        # Publish notification event to RabbitMQ
+        publish_notification_event(user_id, message, db_transaction.id, transaction.type)
 
         return db_transaction
 
@@ -176,3 +185,8 @@ def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete transaction: {str(e)}")
+
+# Graceful shutdown
+@app.on_event("shutdown")
+def shutdown_event():
+    rabbitmq_publisher.close()

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API_URL = "http://127.0.0.1:8002/accounts";
+const API_URL = 'http://localhost/api/accounts';
 
 function Accounts() {
   const [accounts, setAccounts] = useState([]);
