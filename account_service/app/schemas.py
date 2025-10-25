@@ -5,6 +5,9 @@ class AccountCreate(BaseModel):
     account_type: str
     balance: float = 0.0
 
+class AccountUpdate(BaseModel):
+    balance: float
+
 class AccountResponse(BaseModel):
     id: int
     user_id: int

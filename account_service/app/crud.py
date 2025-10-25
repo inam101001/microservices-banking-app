@@ -17,6 +17,16 @@ def create_account(db: Session, account: schemas.AccountCreate):
     db.commit()
     db.refresh(db_account)
     return db_account
+
+def update_account_balance(db: Session, account_id: int, new_balance: float):
+    db_account = db.query(models.Account).filter(models.Account.id == account_id).first()
+    if db_account:
+        db_account.balance = new_balance
+        db.commit()
+        db.refresh(db_account)
+        return db_account
+    return None
+
 def delete_account(db: Session, account_id: int):
     account = db.query(models.Account).filter(models.Account.id == account_id).first()
     if account:

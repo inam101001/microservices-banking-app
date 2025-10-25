@@ -36,82 +36,143 @@ def get_db():
 def read_root():
     return {"message": "Transaction Service is running"}
 
-# --- CRUD Endpoints ---
-@app.post("/transactions", response_model=schemas.TransactionResponse)
-def create_transaction(transaction: schemas.TransactionCreate, db: Session = Depends(get_db)):
-    account_service_url = f"http://127.0.0.1:8002/accounts/{transaction.account_id}"
+def get_account_from_service(account_id: int):
+    """Helper function to get account data from Account Service"""
     try:
-        response = requests.get(account_service_url)
-        if response.status_code != 200:
-            raise HTTPException(status_code=400, detail="Source account does not exist")
-        account_data = response.json()
-    except requests.exceptions.RequestException:
-        raise HTTPException(status_code=500, detail="Cannot connect to Account Service")
+        account_service_url = f"http://127.0.0.1:8002/accounts/{account_id}"
+        response = requests.get(account_service_url, timeout=5)
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Account Service error: {response.status_code}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Cannot connect to Account Service: {str(e)}")
 
-    # Handle deposit
-    if transaction.type == "deposit":
-        new_balance = account_data['balance'] + transaction.amount
-    # Handle withdraw
-    elif transaction.type == "withdraw":
-        if account_data['balance'] < transaction.amount:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
-        new_balance = account_data['balance'] - transaction.amount
-    # Handle transfer
-    elif transaction.type == "transfer":
-        if transaction.target_account_id is None:
-            raise HTTPException(status_code=400, detail="Target account ID required for transfer")
-        if account_data['balance'] < transaction.amount:
-            raise HTTPException(status_code=400, detail="Insufficient balance")
-
-        # Update target account balance
-        target_url = f"http://127.0.0.1:8002/accounts/{transaction.target_account_id}"
-        target_resp = requests.get(target_url)
-        if target_resp.status_code != 200:
-            raise HTTPException(status_code=400, detail="Target account does not exist")
-        target_account = target_resp.json()
-        target_new_balance = target_account['balance'] + transaction.amount
-        # Update target account
-        requests.put(target_url, json={"balance": target_new_balance})
-
-        new_balance = account_data['balance'] - transaction.amount
-    else:
-        raise HTTPException(status_code=400, detail="Invalid transaction type")
-
-    # Update source account balance
-    requests.put(f"http://127.0.0.1:8002/accounts/{transaction.account_id}", json={"balance": new_balance})
-
-    # Create transaction in DB
-    db_transaction = crud.create_transaction(db, transaction)
-
-    # --- Send Notification ---
+def update_account_balance_in_service(account_id: int, new_balance: float):
+    """Helper function to update account balance in Account Service"""
     try:
-        # Use user_id from source account
-        user_id = account_data['user_id']
-        message = f"{transaction.type.capitalize()} of {transaction.amount} completed for account {transaction.account_id}"
+        account_service_url = f"http://127.0.0.1:8002/accounts/{account_id}"
+        update_data = {"balance": new_balance}
+        response = requests.put(account_service_url, json=update_data, timeout=5)
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Failed to update account balance: {response.status_code}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Cannot connect to Account Service: {str(e)}")
+
+def send_notification(user_id: int, message: str):
+    """Helper function to send notification"""
+    try:
         notification_payload = {
             "user_id": user_id,
             "message": message
         }
-        requests.post("http://127.0.0.1:8004/notifications", json=notification_payload)
-    except Exception as e:
-        print(f"Failed to send notification: {e}")
+        requests.post("http://127.0.0.1:8004/notifications", json=notification_payload, timeout=5)
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send notification: {e}")  # Don't fail transaction for notification errors
 
-    return db_transaction
+# --- CRUD Endpoints ---
+@app.post("/transactions", response_model=schemas.TransactionResponse)
+def create_transaction(transaction: schemas.TransactionCreate, db: Session = Depends(get_db)):
+    try:
+        # Validate account exists and get current balance
+        account_data = get_account_from_service(transaction.account_id)
+        current_balance = account_data['balance']
+        user_id = account_data['user_id']
+
+        # Process transaction based on type
+        if transaction.type == "deposit":
+            new_balance = current_balance + transaction.amount
+            message = f"Deposit of ${transaction.amount:.2f} completed. New balance: ${new_balance:.2f}"
+            
+        elif transaction.type == "withdraw":
+            if current_balance < transaction.amount:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Insufficient balance. Current balance: ${current_balance:.2f}, Requested: ${transaction.amount:.2f}"
+                )
+            new_balance = current_balance - transaction.amount
+            message = f"Withdrawal of ${transaction.amount:.2f} completed. New balance: ${new_balance:.2f}"
+            
+        elif transaction.type == "transfer":
+            if current_balance < transaction.amount:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Insufficient balance for transfer. Current balance: ${current_balance:.2f}, Requested: ${transaction.amount:.2f}"
+                )
+            
+            # Validate target account exists
+            target_account_data = get_account_from_service(transaction.target_account_id)
+            target_user_id = target_account_data['user_id']
+            target_current_balance = target_account_data['balance']
+            
+            # Update both accounts
+            new_balance = current_balance - transaction.amount
+            target_new_balance = target_current_balance + transaction.amount
+            
+            # Update target account first (in case of failure, source account remains unchanged)
+            update_account_balance_in_service(transaction.target_account_id, target_new_balance)
+            
+            message = f"Transfer of ${transaction.amount:.2f} to account {transaction.target_account_id} completed. New balance: ${new_balance:.2f}"
+            
+            # Send notification to target account user
+            target_message = f"Received transfer of ${transaction.amount:.2f} from account {transaction.account_id}. New balance: ${target_new_balance:.2f}"
+            send_notification(target_user_id, target_message)
+
+        # Update source account balance
+        update_account_balance_in_service(transaction.account_id, new_balance)
+
+        # Create transaction record in database
+        db_transaction = crud.create_transaction(db, transaction)
+
+        # Send notification to source account user
+        send_notification(user_id, message)
+
+        return db_transaction
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transaction failed: {str(e)}")
 
 @app.get("/transactions", response_model=list[schemas.TransactionResponse])
 def read_transactions(account_id: int = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return crud.get_transactions(db, account_id=account_id, skip=skip, limit=limit)
+    try:
+        return crud.get_transactions(db, account_id=account_id, skip=skip, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve transactions: {str(e)}")
 
 @app.get("/transactions/{transaction_id}", response_model=schemas.TransactionResponse)
 def read_transaction(transaction_id: int, db: Session = Depends(get_db)):
-    db_transaction = crud.get_transaction(db, transaction_id)
-    if db_transaction is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return db_transaction
+    try:
+        if transaction_id <= 0:
+            raise HTTPException(status_code=400, detail="Transaction ID must be a positive integer")
+        
+        db_transaction = crud.get_transaction(db, transaction_id)
+        if db_transaction is None:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        return db_transaction
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve transaction: {str(e)}")
+
 @app.delete("/transactions/{transaction_id}")
 def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
-    transaction = crud.get_transaction(db, transaction_id)
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    crud.delete_transaction(db, transaction_id)
-    return {"message": f"Transaction {transaction_id} deleted successfully"}
+    try:
+        if transaction_id <= 0:
+            raise HTTPException(status_code=400, detail="Transaction ID must be a positive integer")
+        
+        transaction = crud.get_transaction(db, transaction_id)
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        crud.delete_transaction(db, transaction_id)
+        return {"message": f"Transaction {transaction_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete transaction: {str(e)}")
