@@ -58,6 +58,7 @@ graph TD
   I6 --> I6b[service.yaml]
   I6 --> I6c[configmap.yaml]
   I6 --> I6d[nginx.conf]
+```
 Phase 0 — Base Project Setup
 Goals:
 
