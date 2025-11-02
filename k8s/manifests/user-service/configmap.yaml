@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+  namespace: microservices
+data:
+  DATABASE_URL: "sqlite:///db/users.db"
