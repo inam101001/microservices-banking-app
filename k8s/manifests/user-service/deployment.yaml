@@ -20,6 +20,12 @@ spec:
           image: inam101001/user-service:dev
           ports:
             - containerPort: 8001
+          env:
+            - name: USER_SERVICE_DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: user-service-config
+                  key: USER_SERVICE_DATABASE_URL
           resources:
             requests:
               memory: "128Mi"
@@ -27,5 +33,19 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
-          env:
-            # Add environment variables here if needed
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.28
+          command: ['sh', '-c', "until nc -z user-postgres 5432; do echo waiting for postgres; sleep 2; done"]

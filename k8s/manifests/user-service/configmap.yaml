@@ -4,4 +4,4 @@ metadata:
   name: user-service-config
   namespace: microservices
 data:
-  DATABASE_URL: "sqlite:///db/users.db"
+  USER_SERVICE_DATABASE_URL: "postgresql://postgres:password@user-postgres:5432/user_service_db"

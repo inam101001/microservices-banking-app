@@ -20,6 +20,12 @@ spec:
           image: inam101001/transaction-service:dev
           ports:
             - containerPort: 8003
+          env:
+            - name: TRANSACTION_SERVICE_DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: transaction-service-config
+                  key: TRANSACTION_SERVICE_DATABASE_URL
           resources:
             requests:
               memory: "128Mi"
@@ -27,3 +33,19 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8003
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8003
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.28
+          command: ['sh', '-c', "until nc -z transaction-postgres 5432; do echo waiting for postgres; sleep 2; done"]

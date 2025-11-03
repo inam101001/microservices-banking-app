@@ -4,4 +4,4 @@ metadata:
   name: transaction-service-config
   namespace: microservices
 data:
-  DATABASE_URL: "sqlite:///db/transactions.db"
+  TRANSACTION_SERVICE_DATABASE_URL: "postgresql://postgres:password@transaction-postgres:5432/transaction_service_db"
