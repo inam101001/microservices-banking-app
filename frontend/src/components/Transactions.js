@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API_URL = 'http://localhost/api/transactions';
+const API_URL = '/api/transactions';
 
 function Transactions() {
   const [transactions, setTransactions] = useState([]);

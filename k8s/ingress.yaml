@@ -1,0 +1,71 @@
+# API Ingress - with path rewriting
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microbank-api-ingress
+  namespace: microservices
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: microbank.local
+      http:
+        paths:
+          # User Service API
+          - path: /api/(users.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 8001
+          
+          # Account Service API
+          - path: /api/(accounts.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: account-service
+                port:
+                  number: 8002
+          
+          # Transaction Service API
+          - path: /api/(transactions.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: transaction-service
+                port:
+                  number: 8003
+          
+          # Notification Service API
+          - path: /api/(notifications.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: notification-service
+                port:
+                  number: 8004
+---
+# Frontend Ingress - NO rewriting
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: microbank-frontend-ingress
+  namespace: microservices
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: microbank.local
+      http:
+        paths:
+          # Frontend (root path - no rewrite)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

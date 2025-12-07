@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: frontend
   namespace: microservices
+  labels:
+    app: frontend
 spec:
   selector:
     app: frontend
@@ -10,4 +12,5 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 80
-  type: NodePort
+      name: http
+  type: ClusterIP

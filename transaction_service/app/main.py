@@ -32,7 +32,7 @@ def read_root():
 def get_account_from_service(account_id: int):
     """Helper function to get account data from Account Service"""
     try:
-        account_service_url = f"http://127.0.0.1:8002/accounts/{account_id}"
+        account_service_url = f"http://account-service:8002/accounts/{account_id}"
         response = requests.get(account_service_url, timeout=5)
         if response.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Account {account_id} not found")
@@ -45,7 +45,7 @@ def get_account_from_service(account_id: int):
 def update_account_balance_in_service(account_id: int, new_balance: float):
     """Helper function to update account balance in Account Service"""
     try:
-        account_service_url = f"http://127.0.0.1:8002/accounts/{account_id}"
+        account_service_url = f"http://account-service:8002/accounts/{account_id}"
         update_data = {"balance": new_balance}
         response = requests.put(account_service_url, json=update_data, timeout=5)
         if response.status_code == 404:

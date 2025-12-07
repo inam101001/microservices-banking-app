@@ -26,7 +26,7 @@ def read_root():
 def create_account(account: schemas.AccountCreate, db: Session = Depends(get_db)):
     try:
         # Validate user_id by calling User Service
-        user_service_url = f"http://127.0.0.1:8001/users/{account.user_id}"
+        user_service_url = f"http://user-service:8001/users/{account.user_id}"
         try:
             response = requests.get(user_service_url, timeout=5)
             if response.status_code != 200:
