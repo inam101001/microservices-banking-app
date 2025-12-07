@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API_URL = 'http://localhost/api/notifications';
+const API_URL = '/api/notifications';
 
 function Notifications() {
   const [notifications, setNotifications] = useState([]);

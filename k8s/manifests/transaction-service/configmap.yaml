@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: transaction-service-config
+  namespace: microservices
+data:
+  TRANSACTION_SERVICE_DATABASE_URL: "postgresql://postgres:password@transaction-postgres:5432/transaction_service_db"

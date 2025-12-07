@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-service-config
+  namespace: microservices
+data:
+  USER_SERVICE_DATABASE_URL: "postgresql://postgres:password@user-postgres:5432/user_service_db"

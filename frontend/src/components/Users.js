@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 
-const API_URL = 'http://localhost/api/users';
+const API_URL = '/api/users';
 
 function Users() {
   const [users, setUsers] = useState([]);
