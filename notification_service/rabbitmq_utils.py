@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RabbitMQPublisher:
-    def __init__(self, host='localhost', port=5672, username='admin', password='admin123'):
+    def __init__(self, host='rabbitmq', port=5672, username='admin', password='changeme'):
         self.host = host
         self.port = port
         self.username = username
@@ -69,7 +69,7 @@ class RabbitMQPublisher:
             logger.info("RabbitMQ connection closed")
 
 class RabbitMQConsumer:
-    def __init__(self, host='localhost', port=5672, username='admin', password='admin123'):
+    def __init__(self, host='rabbitmq', port=5672, username='admin', password='changeme'):
         self.host = host
         self.port = port
         self.username = username

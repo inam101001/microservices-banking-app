@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-config
+  namespace: microservices
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus].
+  rabbitmq.conf: |
+    default_user = admin
+    default_pass = changeme
+    management.tcp.port = 15672
