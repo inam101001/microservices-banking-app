@@ -818,9 +818,899 @@ kubectl logs -n microservices rabbitmq-0 --previous
 
 ---
 
-**Phase 5 Status:** ✅ Complete  
-**Date Completed:** December 12, 2025  
-**Next Phase:** Phase 6 - Monitoring & Observability
+## Phase 6: Monitoring & Observability with Prometheus + Grafana
+
+### Objective
+
+Implement comprehensive monitoring and observability for the microservices banking application using Prometheus for metrics collection and Grafana for visualization. Instrument all FastAPI services to expose Prometheus metrics, deploy monitoring infrastructure via Helm, and create dashboards for service health, API performance, business KPIs, and system resources.
+
+### Completed Tasks
+
+#### 1. FastAPI Service Instrumentation
+
+**Purpose:** Enable metrics collection from all microservices by exposing `/metrics` endpoints
+
+**Dependencies Added:**
+
+Updated `requirements.txt` for all four services:
+
+```txt
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pydantic
+requests
+pika
+email-validator
+prometheus-client==0.19.0
+prometheus-fastapi-instrumentator==6.1.0
+```
+
+**Instrumentation Code:**
+
+Added to each service's `app/main.py` (user, account, transaction, notification):
+
+```python
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from prometheus_fastapi_instrumentator import Instrumentator
+from . import models, schemas, crud
+from .database import Base, engine, SessionLocal
+
+app = FastAPI(title="Service Name", version="1.0.0")
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+# Prometheus metrics instrumentation
+Instrumentator().instrument(app).expose(app)
+
+# ... rest of service code ...
+```
+
+**Key Implementation Details:**
+
+- Simple, zero-configuration setup using default Instrumentator settings
+- Metrics endpoint automatically exposed at `/metrics` on each service
+- Instrumentation added after app creation but before route definitions
+- Title added to FastAPI app for better identification in metrics
+
+**Exposed Metrics per Service:**
+
+Each service now exposes the following metric types:
+
+**HTTP Request Metrics:**
+- `http_requests_total` - Counter of total HTTP requests by method, handler, and status code
+- `http_request_duration_seconds` - Histogram of request latency
+- `http_request_size_bytes` - Summary of request payload sizes
+- `http_response_size_bytes` - Summary of response payload sizes
+- `http_request_duration_highr_seconds` - High-resolution latency histogram with more buckets
+
+**Python Runtime Metrics:**
+- `python_gc_objects_collected_total` - Objects collected during garbage collection
+- `python_gc_objects_uncollectable_total` - Uncollectable objects found during GC
+- `python_gc_collections_total` - Number of times GC was triggered per generation
+- `python_info` - Python version and implementation information
+
+**Process Metrics:**
+- `process_virtual_memory_bytes` - Virtual memory size
+- `process_resident_memory_bytes` - Resident memory size (RSS)
+- `process_start_time_seconds` - Process start time as Unix timestamp
+- `process_cpu_seconds_total` - Total CPU time consumed
+- `process_open_fds` - Number of open file descriptors
+- `process_max_fds` - Maximum number of file descriptors
+
+**Metric Labels:**
+
+Each HTTP metric includes labels for detailed filtering:
+- `job` - Service name (e.g., "user-service")
+- `instance` - Service instance DNS name
+- `handler` - API endpoint path (e.g., "/users", "/transactions")
+- `method` - HTTP method (GET, POST, PUT, DELETE)
+- `status` - Status code category (2xx, 4xx, 5xx)
+
+**Docker Image Rebuild:**
+
+All four service images were rebuilt with Prometheus dependencies:
+
+```bash
+# Rebuild with no cache to ensure fresh dependencies
+docker build --no-cache -t inam101001/user-service:dev -f user_service/Dockerfile user_service/
+docker build --no-cache -t inam101001/account-service:dev -f account_service/Dockerfile account_service/
+docker build --no-cache -t inam101001/transaction-service:dev -f transaction_service/Dockerfile transaction_service/
+docker build --no-cache -t inam101001/notification-service:dev -f notification_service/Dockerfile notification_service/
+
+# Push to DockerHub
+docker push inam101001/user-service:dev
+docker push inam101001/account-service:dev
+docker push inam101001/transaction-service:dev
+docker push inam101001/notification-service:dev
+```
+
+**Deployment Configuration Update:**
+
+Updated all service deployments to include `imagePullPolicy: Always` to prevent Kubernetes from using cached images:
+
+```yaml
+# Example: k8s/manifests/user-service/deployment.yaml
+spec:
+  containers:
+    - name: user-service
+      image: inam101001/user-service:dev
+      imagePullPolicy: Always  # ← Added to ensure fresh image pulls
+```
+
+**Deployment:**
+
+```bash
+# Restart all services to load instrumented images
+kubectl rollout restart deployment/user-service -n microservices
+kubectl rollout restart deployment/account-service -n microservices
+kubectl rollout restart deployment/transaction-service -n microservices
+kubectl rollout restart deployment/notification-service -n microservices
+
+# Verify all pods are running
+kubectl get pods -n microservices
+```
+
+**Validation:**
+
+```bash
+# Port forward to test metrics endpoint
+kubectl port-forward -n microservices svc/user-service 8001:8001
+
+# Verify metrics are exposed
+curl http://localhost:8001/metrics | head -20
+
+# Sample output:
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+# python_gc_objects_collected_total{generation="0"} 359.0
+# ...
+# HELP http_requests_total Total number of requests by method and status
+# TYPE http_requests_total counter
+# http_requests_total{handler="/",method="GET",status="2xx"} 21.0
+```
+
+#### 2. Prometheus Deployment
+
+**Deployment Method:** Helm chart from prometheus-community repository
+
+**Helm Repository Setup:**
+
+```bash
+# Add Prometheus community Helm repository
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+```
+
+**Installation:**
+
+```bash
+helm install prometheus prometheus-community/prometheus \
+  --namespace monitoring \
+  --create-namespace \
+  --set server.persistentVolume.size=5Gi \
+  --set alertmanager.enabled=false \
+  --set prometheus-pushgateway.enabled=false \
+  --set kube-state-metrics.enabled=true
+```
+
+**Configuration Parameters:**
+- `namespace: monitoring` - Dedicated namespace for monitoring components
+- `server.persistentVolume.size=5Gi` - Persistent storage for metrics data
+- `alertmanager.enabled=false` - Disabled (not needed for Phase 6)
+- `prometheus-pushgateway.enabled=false` - Disabled (not needed for Phase 6)
+- `kube-state-metrics.enabled=true` - Enabled for Kubernetes cluster metrics
+
+**Deployed Components:**
+
+```bash
+kubectl get pods -n monitoring
+
+NAME                                             READY   STATUS    RESTARTS   AGE
+prometheus-kube-state-metrics-7fb696d888-qrpdf   1/1     Running   0          19h
+prometheus-prometheus-node-exporter-bmc2t        1/1     Running   0          19h
+prometheus-prometheus-node-exporter-hcj62        1/1     Running   0          19h
+prometheus-prometheus-node-exporter-vrbwc        1/1     Running   0          19h
+prometheus-server-6f47c5cd6f-8ltdk               2/2     Running   0          19h
+```
+
+**Component Descriptions:**
+- `prometheus-server` - Main Prometheus server (metrics storage and querying)
+- `prometheus-kube-state-metrics` - Kubernetes cluster state metrics
+- `prometheus-node-exporter` - Node-level system metrics (3 replicas, one per node)
+
+**Services Created:**
+
+```bash
+kubectl get svc -n monitoring
+
+NAME                              TYPE        CLUSTER-IP      PORT(S)
+prometheus-server                 ClusterIP   10.96.xxx.xxx   80/TCP
+prometheus-kube-state-metrics     ClusterIP   10.96.xxx.xxx   8080/TCP
+prometheus-node-exporter          ClusterIP   None            9100/TCP
+```
+
+#### 3. Prometheus Scrape Configuration
+
+**Directory Structure:**
+
+```
+k8s/monitoring/
+├── patch-prometheus.sh
+├── access-monitoring.sh
+├── grafana-microservices-dashboard.json
+├── grafana-business-metrics-dashboard.json
+├── grafana-system-health-dashboard.json
+└── README.md
+```
+
+**Configuration Script:** `k8s/monitoring/patch-prometheus.sh`
+
+```bash
+#!/bin/bash
+
+# Script to manually add scrape configs to Prometheus
+# This edits the ConfigMap directly
+
+echo "🔧 Patching Prometheus to scrape microservices..."
+
+# Create a patch file
+cat > /tmp/prometheus-patch.yaml << 'EOF'
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 1m
+      scrape_timeout: 10s
+      evaluation_interval: 1m
+    scrape_configs:
+    - job_name: prometheus
+      static_configs:
+      - targets:
+        - localhost:9090
+    
+    # Our microservices
+    - job_name: 'user-service'
+      static_configs:
+      - targets: ['user-service.microservices.svc.cluster.local:8001']
+        labels:
+          service: 'user-service'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'account-service'
+      static_configs:
+      - targets: ['account-service.microservices.svc.cluster.local:8002']
+        labels:
+          service: 'account-service'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'transaction-service'
+      static_configs:
+      - targets: ['transaction-service.microservices.svc.cluster.local:8003']
+        labels:
+          service: 'transaction-service'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'notification-service'
+      static_configs:
+      - targets: ['notification-service.microservices.svc.cluster.local:8004']
+        labels:
+          service: 'notification-service'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+EOF
+
+# Apply patch
+kubectl patch configmap prometheus-server -n monitoring --patch-file /tmp/prometheus-patch.yaml
+
+# Restart Prometheus
+kubectl delete pods -n monitoring -l app.kubernetes.io/name=prometheus,component=server
+
+echo "✅ Done! Prometheus is configured."
+```
+
+**Scrape Configuration Details:**
+
+Each microservice scrape job includes:
+- `job_name` - Unique identifier for the service
+- `static_configs.targets` - Kubernetes service DNS name with port
+- `labels.service` - Custom label for service identification
+- `metrics_path` - Path to metrics endpoint (`/metrics`)
+- `scrape_interval` - How often to scrape metrics (15 seconds)
+
+**Kubernetes DNS Names:**
+
+Services are accessed via internal cluster DNS:
+- Format: `<service-name>.<namespace>.svc.cluster.local:<port>`
+- Examples:
+  - `user-service.microservices.svc.cluster.local:8001`
+  - `account-service.microservices.svc.cluster.local:8002`
+  - `transaction-service.microservices.svc.cluster.local:8003`
+  - `notification-service.microservices.svc.cluster.local:8004`
+
+**Execution:**
+
+```bash
+cd k8s/monitoring
+chmod +x patch-prometheus.sh
+./patch-prometheus.sh
+```
+
+**Verification:**
+
+```bash
+# Port forward to Prometheus
+kubectl port-forward -n monitoring svc/prometheus-server 9090:80
+
+# Visit http://localhost:9090/targets
+# All 4 services should show state: UP
+```
+
+**Prometheus UI - Targets Page:**
+
+```
+Endpoint                                                      State    Labels
+user-service.microservices.svc.cluster.local:8001/metrics     UP      job="user-service"
+account-service.microservices.svc.cluster.local:8002/metrics  UP      job="account-service"
+transaction-service.microservices.svc.cluster.local:8003/...  UP      job="transaction-service"
+notification-service.microservices.svc.cluster.local:8004/... UP      job="notification-service"
+```
+
+#### 4. Grafana Deployment
+
+**Deployment Method:** Helm chart from grafana repository
+
+**Helm Repository Setup:**
+
+```bash
+# Add Grafana Helm repository
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+```
+
+**Installation:**
+
+```bash
+helm install grafana grafana/grafana \
+  --namespace monitoring \
+  --set persistence.enabled=true \
+  --set persistence.size=5Gi \
+  --set adminPassword='admin'
+```
+
+**Configuration Parameters:**
+- `namespace: monitoring` - Same namespace as Prometheus
+- `persistence.enabled=true` - Enable persistent storage for dashboards
+- `persistence.size=5Gi` - Storage size for Grafana data
+- `adminPassword='admin'` - Default admin password
+
+**Deployed Pod:**
+
+```bash
+kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
+
+NAME                       READY   STATUS    RESTARTS   AGE
+grafana-6f76d55545-krvf9   1/1     Running   0          19h
+```
+
+**Service:**
+
+```bash
+kubectl get svc -n monitoring grafana
+
+NAME      TYPE        CLUSTER-IP      PORT(S)
+grafana   ClusterIP   10.96.xxx.xxx   80/TCP
+```
+
+**Access Grafana:**
+
+```bash
+# Port forward to Grafana
+kubectl port-forward -n monitoring svc/grafana 3000:80
+
+# Visit: http://localhost:3000
+# Username: admin
+# Password: admin
+```
+
+#### 5. Grafana Data Source Configuration
+
+**Data Source Setup:**
+
+1. Login to Grafana at http://localhost:3000
+2. Navigate to **Configuration** → **Data Sources** (or **Connections** → **Data sources**)
+3. Click **Add data source**
+4. Select **Prometheus**
+5. Configure:
+   - **Name**: Prometheus
+   - **URL**: `http://prometheus-server.monitoring.svc.cluster.local:80`
+   - **Access**: Server (default)
+6. Click **Save & Test**
+
+**Connection Details:**
+
+- Uses internal Kubernetes DNS for communication
+- Grafana pod can directly access Prometheus service
+- No authentication required (internal cluster communication)
+
+**Validation:**
+
+Successful connection shows: ✅ "Successfully queried the Prometheus API."
+
+#### 6. Grafana Dashboards
+
+**Dashboard 1: Microservices Overview**
+
+**File:** `k8s/monitoring/grafana-microservices-dashboard.json`
+
+**Panels:**
+
+1. **Request Rate (req/sec)** - Time series graph
+   - Query: `rate(http_requests_total{job="<service>"}[1m])`
+   - Shows request throughput per service over time
+   - Legend: Service name
+
+2. **Average Response Time** - Time series graph
+   - Query: `rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])`
+   - Shows average latency per service in seconds
+   - Helps identify performance bottlenecks
+
+3. **Total Requests** - Stat panel
+   - Query: `sum(http_requests_total)`
+   - Single number showing cumulative requests across all services
+   - Graph mode: area
+
+4. **Requests by Service** - Pie chart
+   - Query: `sum by (job) (http_requests_total)`
+   - Visual distribution of traffic across services
+   - Legend shows percentages
+
+5. **Requests by Status Code** - Time series
+   - Query: `sum by (status) (rate(http_requests_total[1m]))`
+   - Shows 2xx, 4xx, 5xx status code trends
+   - Helps identify error spikes
+
+6. **Requests by Handler** - Time series
+   - Query: `sum by (handler, job) (rate(http_requests_total{handler!="/metrics"}[1m]))`
+   - Shows which endpoints are most active
+   - Excludes /metrics endpoint from visualization
+
+**Refresh Settings:**
+- Auto-refresh: 5 seconds
+- Time range: Last 15 minutes
+- Timezone: Browser
+
+**Dashboard 2: Business Metrics**
+
+**File:** `k8s/monitoring/grafana-business-metrics-dashboard.json`
+
+**Panels:**
+
+1. **Transaction Rate (per minute)** - Time series
+   - Query: `sum(rate(http_requests_total{handler="/transactions",method="POST",status="2xx"}[1m])) * 60`
+   - Shows successful transaction rate
+   - Business KPI tracking
+
+2. **User & Account Creation Rate** - Time series
+   - Query: `sum(rate(http_requests_total{handler="/users",method="POST",status="2xx"}[1m])) * 60`
+   - Tracks user registration and account creation
+   - Growth indicators
+
+3. **Total Transactions (Today)** - Stat panel
+   - Query: `sum(increase(http_requests_total{handler="/transactions",method="POST",status="2xx"}[24h]))`
+   - Daily transaction count
+   - Business volume metric
+
+4. **Total Users Created (Today)** - Stat panel
+   - Query: `sum(increase(http_requests_total{handler="/users",method="POST",status="2xx"}[24h]))`
+   - Daily user signups
+
+5. **Notifications Sent (Today)** - Stat panel
+   - Query: `sum(increase(http_requests_total{job="notification-service",handler!="/metrics"}[24h]))`
+   - Daily notification volume
+
+6. **Error Rate by Service** - Time series
+   - Query: `sum by (job) (rate(http_requests_total{status=~"4xx|5xx"}[1m]))`
+   - Service error monitoring
+   - SLA tracking
+
+7. **Success Rate (%)** - Gauge
+   - Query: `(sum(rate(http_requests_total{status="2xx"}[5m])) / sum(rate(http_requests_total[5m]))) * 100`
+   - Overall system health indicator
+   - Thresholds: Red <90%, Yellow 90-95%, Green >95%
+
+**Dashboard 3: System Health**
+
+**File:** `k8s/monitoring/grafana-system-health-dashboard.json`
+
+**Panels:**
+
+1. **Memory Usage by Service** - Time series
+   - Query: `process_resident_memory_bytes{job=~".*-service"}`
+   - Shows RSS memory consumption per service
+   - Unit: Bytes
+
+2. **CPU Usage by Service** - Time series
+   - Query: `rate(process_cpu_seconds_total{job=~".*-service"}[1m])`
+   - CPU utilization per service
+   - Unit: Percent
+
+3. **Open File Descriptors** - Time series
+   - Query: `process_open_fds{job=~".*-service"}`
+   - File descriptor usage tracking
+   - Prevents resource exhaustion
+
+4. **Python GC Collections** - Time series
+   - Query: `rate(python_gc_collections_total{job=~".*-service"}[1m])`
+   - Garbage collection frequency
+   - Performance indicator
+
+5. **Service Status Indicators** - 4 Stat panels
+   - Query: `up{job="<service>"}`
+   - Color-coded status: Green (UP) / Red (DOWN)
+   - One panel per service
+
+**Dashboard Import Process:**
+
+```bash
+# In Grafana UI:
+1. Click Dashboards → New → Import
+2. Upload JSON file or paste JSON content
+3. Select "Prometheus" as data source
+4. Click Import
+```
+
+#### 7. Traffic Generation for Testing
+
+**Purpose:** Generate realistic traffic to populate dashboards with data
+
+**Script:** `generate-traffic.sh` (project root)
+
+```bash
+#!/bin/bash
+
+echo "🚀 Generating traffic to microservices..."
+BASE_URL="http://microbank.local"
+
+# Create sample users
+for i in {1..5}; do
+    curl -s -X POST "$BASE_URL/api/users" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"User'$i'","email":"user'$i'@example.com"}' > /dev/null
+done
+
+# Create accounts
+for i in {1..5}; do
+    curl -s -X POST "$BASE_URL/api/accounts" \
+        -H "Content-Type: application/json" \
+        -d '{"user_id":'$i',"account_type":"checking","balance":1000.00}' > /dev/null
+done
+
+# Continuous traffic generation
+while true; do
+    # GET requests to all services
+    curl -s http://microbank.local/api/users > /dev/null &
+    curl -s http://microbank.local/api/accounts > /dev/null &
+    curl -s http://microbank.local/api/transactions > /dev/null &
+    curl -s http://microbank.local/api/notifications > /dev/null &
+    
+    # Occasional transaction
+    if [ $((RANDOM % 3)) -eq 0 ]; then
+        amount=$((RANDOM % 50 + 10))
+        account_id=$((RANDOM % 5 + 1))
+        curl -s -X POST http://microbank.local/api/transactions \
+            -H "Content-Type: application/json" \
+            -d '{"account_id":'$account_id',"type":"deposit","amount":'$amount'.00}' > /dev/null &
+    fi
+    
+    sleep 2
+done
+```
+
+**Usage:**
+
+```bash
+chmod +x generate-traffic.sh
+./generate-traffic.sh
+# Press Ctrl+C to stop
+```
+
+### Architecture After Phase 6
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Monitoring Layer                          │
+│  ┌────────────────┐              ┌────────────────┐         │
+│  │   Prometheus   │              │    Grafana     │         │
+│  │   Server       │◄─────────────│   (UI/Dash)    │         │
+│  │   :9090        │              │   :3000        │         │
+│  └────────┬───────┘              └────────────────┘         │
+│           │                                                   │
+│           │ Scrapes /metrics every 15s                       │
+│           │                                                   │
+└───────────┼───────────────────────────────────────────────────┘
+            │
+            │ HTTP GET /metrics
+            │
+┌───────────┼───────────────────────────────────────────────────┐
+│           ▼                                                    │
+│  ┌─────────────────────────────────────────────────┐         │
+│  │        Microservices (All Instrumented)         │         │
+│  │                                                  │         │
+│  │  ┌────────────┐  ┌────────────┐                │         │
+│  │  │   User     │  │  Account   │  Each exposes  │         │
+│  │  │  Service   │  │  Service   │  /metrics      │         │
+│  │  │  :8001     │  │  :8002     │  endpoint      │         │
+│  │  └────────────┘  └────────────┘                │         │
+│  │                                                  │         │
+│  │  ┌────────────┐  ┌────────────┐                │         │
+│  │  │Transaction │  │Notification│                │         │
+│  │  │  Service   │  │  Service   │                │         │
+│  │  │  :8003     │  │  :8004     │                │         │
+│  │  └────────────┘  └────────────┘                │         │
+│  └─────────────────────────────────────────────────┘         │
+│                                                                │
+│  Frontend │ NGINX Ingress │ RabbitMQ │ 4x PostgreSQL        │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Metrics Flow
+
+```
+1. Service receives HTTP request
+        │
+        v
+2. Instrumentator middleware captures:
+   - Request timestamp
+   - HTTP method, path, status code
+   - Response time
+   - Request/response sizes
+        │
+        v
+3. Metrics stored in service memory
+   (accessible at /metrics endpoint)
+        │
+        v
+4. Prometheus scrapes /metrics every 15s
+        │
+        v
+5. Metrics stored in Prometheus TSDB
+   (5Gi persistent volume)
+        │
+        v
+6. Grafana queries Prometheus
+   for dashboard visualization
+        │
+        v
+7. User views real-time metrics in browser
+```
+
+### Validation & Testing
+
+**Test 1: Verify Metrics Endpoints**
+
+```bash
+# Test each service
+curl http://microbank.local/api/users > /dev/null  # Generate traffic
+
+# Check metrics
+kubectl port-forward -n microservices svc/user-service 8001:8001
+curl -s http://localhost:8001/metrics | grep http_requests_total
+
+# Output:
+http_requests_total{handler="/users",method="GET",status="2xx"} 127.0
+```
+
+**Test 2: Verify Prometheus Scraping**
+
+```bash
+# Access Prometheus UI
+kubectl port-forward -n monitoring svc/prometheus-server 9090:80
+
+# Visit: http://localhost:9090/targets
+# Expected: All 4 services showing State: UP
+```
+
+**Test 3: Verify Grafana Dashboards**
+
+```bash
+# Access Grafana
+kubectl port-forward -n monitoring svc/grafana 3000:80
+
+# Visit: http://localhost:3000
+# Login: admin/admin
+# Navigate to dashboards
+# Expected: All panels showing data
+```
+
+**Test 4: End-to-End Metrics Flow**
+
+```bash
+# Generate traffic
+./generate-traffic.sh
+
+# Check Prometheus (http://localhost:9090/graph)
+# Query: rate(http_requests_total[1m])
+# Expected: Non-zero values for all services
+
+# Check Grafana dashboards
+# Expected: Graphs updating in real-time
+```
+
+**Test Results:** ✅ All Passed
+- All services exposing /metrics successfully
+- Prometheus scraping all targets
+- Grafana displaying metrics in dashboards
+- Real-time updates working
+- Business KPIs tracking correctly
+
+### Useful Prometheus Queries
+
+**Request Rate:**
+```promql
+# Total requests per second across all services
+sum(rate(http_requests_total[1m]))
+
+# Per service
+rate(http_requests_total{job="user-service"}[1m])
+```
+
+**Error Rate:**
+```promql
+# Percentage of errors
+sum(rate(http_requests_total{status=~"4xx|5xx"}[5m])) / sum(rate(http_requests_total[5m])) * 100
+```
+
+**Latency:**
+```promql
+# Average response time
+rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])
+
+# 95th percentile
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+```
+
+**Resource Usage:**
+```promql
+# Memory per service
+process_resident_memory_bytes{job=~".*-service"}
+
+# CPU utilization
+rate(process_cpu_seconds_total{job=~".*-service"}[1m])
+```
+
+**Business Metrics:**
+```promql
+# Transactions per hour
+sum(rate(http_requests_total{handler="/transactions",method="POST"}[1h])) * 3600
+
+# Active users (based on API calls)
+count(count by (instance) (http_requests_total{job="user-service"}))
+```
+
+### Monitoring Stack Components
+
+| Component | Version | Purpose | Pods | Storage |
+|-----------|---------|---------|------|---------|
+| Prometheus Server | 2.x | Metrics collection & storage | 1 | 5Gi PVC |
+| Grafana | Latest | Visualization & dashboards | 1 | 5Gi PVC |
+| Kube State Metrics | Latest | Kubernetes cluster metrics | 1 | None |
+| Node Exporter | Latest | Node-level system metrics | 3 | None |
+| **Total** | | | **6 pods** | **10Gi** |
+
+### Key Benefits Achieved
+
+**1. Observability**
+- Real-time visibility into service health
+- Historical metrics for trend analysis
+- Quick identification of performance issues
+
+**2. Performance Monitoring**
+- Request rates and latency tracking
+- Resource utilization monitoring (CPU, memory)
+- Error rate tracking per service
+
+**3. Business Insights**
+- Transaction volume tracking
+- User growth metrics
+- Notification delivery rates
+
+**4. Proactive Issue Detection**
+- Service health status at a glance
+- Error spike detection
+- Resource exhaustion warnings
+
+**5. Debugging & Troubleshooting**
+- Detailed endpoint-level metrics
+- Service-to-service communication visibility
+- Historical data for root cause analysis
+
+### Troubleshooting Guide
+
+#### Issue 1: Metrics Endpoint Returns 404
+
+**Symptom:** `curl http://localhost:8001/metrics` returns `{"detail":"Not Found"}`
+
+**Diagnosis:**
+```bash
+# Check if pod has the instrumented code
+kubectl exec -n microservices deployment/user-service -- cat /app/app/main.py | head -20
+
+# Verify Instrumentator is imported
+kubectl exec -n microservices deployment/user-service -- python -c "from prometheus_fastapi_instrumentator import Instrumentator; print('OK')"
+```
+
+**Solution:**
+- Ensure Prometheus libraries are in requirements.txt
+- Verify `Instrumentator().instrument(app).expose(app)` is in main.py
+- Rebuild Docker image with `--no-cache` flag
+- Add `imagePullPolicy: Always` to deployment
+- Restart deployment
+
+#### Issue 2: Prometheus Not Scraping Services
+
+**Symptom:** Targets show as "DOWN" in Prometheus UI
+
+**Diagnosis:**
+```bash
+# Check if Prometheus can reach service
+kubectl exec -n monitoring deployment/prometheus-server -- wget -O- http://user-service.microservices.svc.cluster.local:8001/metrics
+
+# Check Prometheus logs
+kubectl logs -n monitoring deployment/prometheus-server -c prometheus-server | grep user-service
+```
+
+**Common Causes:**
+- Incorrect service DNS name in scrape config
+- Service not running or not ready
+- Network policy blocking traffic
+- Metrics endpoint not exposed
+
+**Solution:**
+- Verify service is running: `kubectl get pods -n microservices`
+- Check service DNS: `kubectl get svc -n microservices`
+- Verify scrape config: `kubectl get cm prometheus-server -n monitoring -o yaml`
+- Re-apply patch script if needed
+
+#### Issue 3: Grafana Dashboards Show "No Data"
+
+**Symptom:** All panels in Grafana dashboard are empty
+
+**Diagnosis:**
+```bash
+# Check Prometheus data source in Grafana
+# Settings → Data Sources → Prometheus → Test
+
+# Run query in Prometheus UI
+# http://localhost:9090/graph
+# Query: http_requests_total
+```
+
+**Common Causes:**
+- No traffic to services (no metrics generated)
+- Prometheus not scraping yet (wait 15 seconds)
+- Incorrect Prometheus URL in Grafana
+- Wrong label names in dashboard queries
+
+**Solution:**
+- Generate traffic: `./generate-traffic.sh`
+- Wait 30 seconds for Prometheus to scrape
+- Verify data source URL: `http://prometheus-server.monitoring.svc.cluster.local:80`
+- Check query syntax matches actual metric labels
+
+#### Issue 4: Grafana Can't Connect to Prometheus
+
+**Symptom:** Data source test fails with connection error
+
+**Diagnosis:**
+```bash
+# Test from Grafana pod
+kubectl exec -n monitoring deployment/grafana -- wget -O- http://prometheus-server.monitoring.svc.cluster.local:80/api/
 
 ---
 
