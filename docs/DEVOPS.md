@@ -16,10 +16,11 @@
 6. [Phase 3: Kubernetes Manifests for Microservices](#phase-3-kubernetes-manifests-for-microservices)
 7. [Phase 4: Ingress Controller for Unified Access](#phase-4-ingress-controller-for-unified-access)
 8. [Phase 5: RabbitMQ Integration for Async Messaging](#phase-5-rabbitmq-integration-for-async-messaging)
-9. [Database Migration: SQLite to PostgreSQL](#database-migration-sqlite-to-postgresql)
-10. [Validation & Testing](#validation--testing)
-11. [Troubleshooting Guide](#troubleshooting-guide)
-12. [Next Steps](#next-steps)
+9. [Phase 6: Monitoring & Observability with Prometheus + Grafana](#Phase-6-Monitoring-&-Observability-with-Prometheus-Grafana)
+11. [Database Migration: SQLite to PostgreSQL](#database-migration-sqlite-to-postgresql)
+12. [Validation & Testing](#validation--testing)
+13. [Troubleshooting Guide](#troubleshooting-guide)
+14. [Next Steps](#next-steps)
 
 ---
 
