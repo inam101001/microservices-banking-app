@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-custom-scrape-config
+  namespace: monitoring
+data:
+  custom-scrape-configs.yaml: |
+    - job_name: 'user-service'
+      static_configs:
+        - targets: ['user-service.microservices.svc.cluster.local:8001']
+          labels:
+            service: 'user-service'
+            namespace: 'microservices'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'account-service'
+      static_configs:
+        - targets: ['account-service.microservices.svc.cluster.local:8002']
+          labels:
+            service: 'account-service'
+            namespace: 'microservices'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'transaction-service'
+      static_configs:
+        - targets: ['transaction-service.microservices.svc.cluster.local:8003']
+          labels:
+            service: 'transaction-service'
+            namespace: 'microservices'
+      metrics_path: '/metrics'
+      scrape_interval: 15s
+
+    - job_name: 'notification-service'
+      static_configs:
+        - targets: ['notification-service.microservices.svc.cluster.local:8004']
+          labels:
+            service: 'notification-service'
+            namespace: 'microservices'
+      metrics_path: '/metrics'
+      scrape_interval: 15s

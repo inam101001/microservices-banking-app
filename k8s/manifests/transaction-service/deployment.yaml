@@ -18,6 +18,7 @@ spec:
       containers:
         - name: transaction-service
           image: inam101001/transaction-service:dev
+          imagePullPolicy: Always
           ports:
             - containerPort: 8003
           env:

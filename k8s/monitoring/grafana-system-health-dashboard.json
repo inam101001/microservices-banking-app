@@ -1,0 +1,176 @@
+{
+  "dashboard": {
+    "title": "Banking App - System Health",
+    "tags": ["system", "health", "resources"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "timeseries",
+        "title": "Memory Usage by Service",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{job=~\".*-service\"}",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "timeseries",
+        "title": "CPU Usage by Service",
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total{job=~\".*-service\"}[1m])",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "type": "timeseries",
+        "title": "Open File Descriptors",
+        "targets": [
+          {
+            "expr": "process_open_fds{job=~\".*-service\"}",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "type": "timeseries",
+        "title": "Python GC Collections",
+        "targets": [
+          {
+            "expr": "rate(python_gc_collections_total{job=~\".*-service\"}[1m])",
+            "legendFormat": "{{job}} - gen {{generation}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 16},
+        "type": "stat",
+        "title": "User Service Status",
+        "targets": [
+          {
+            "expr": "up{job=\"user-service\"}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 16},
+        "type": "stat",
+        "title": "Account Service Status",
+        "targets": [
+          {
+            "expr": "up{job=\"account-service\"}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 16},
+        "type": "stat",
+        "title": "Transaction Service Status",
+        "targets": [
+          {
+            "expr": "up{job=\"transaction-service\"}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "id": 8,
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 16},
+        "type": "stat",
+        "title": "Notification Service Status",
+        "targets": [
+          {
+            "expr": "up{job=\"notification-service\"}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}}},
+              {"type": "value", "options": {"1": {"text": "UP", "color": "green"}}}
+            ]
+          }
+        }
+      }
+    ],
+    "refresh": "10s",
+    "time": {"from": "now-15m", "to": "now"},
+    "schemaVersion": 36
+  }
+}

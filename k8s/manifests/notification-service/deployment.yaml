@@ -18,6 +18,7 @@ spec:
       containers:
         - name: notification-service
           image: inam101001/notification-service:dev
+          imagePullPolicy: Always
           ports:
             - containerPort: 8004
           env:

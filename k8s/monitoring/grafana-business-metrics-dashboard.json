@@ -1,0 +1,161 @@
+{
+  "dashboard": {
+    "title": "Banking App - Business Metrics",
+    "tags": ["business", "banking", "transactions"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "timeseries",
+        "title": "Transaction Rate (per minute)",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{handler=\"/transactions\",method=\"POST\",status=\"2xx\"}[1m])) * 60",
+            "legendFormat": "Successful Transactions",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{handler=\"/transactions\",method=\"POST\",status=\"4xx\"}[1m])) * 60",
+            "legendFormat": "Failed Transactions",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "timeseries",
+        "title": "User & Account Creation Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{handler=\"/users\",method=\"POST\",status=\"2xx\"}[1m])) * 60",
+            "legendFormat": "New Users",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{handler=\"/accounts\",method=\"POST\",status=\"2xx\"}[1m])) * 60",
+            "legendFormat": "New Accounts",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+        "type": "stat",
+        "title": "Total Transactions (Today)",
+        "targets": [
+          {
+            "expr": "sum(increase(http_requests_total{handler=\"/transactions\",method=\"POST\",status=\"2xx\"}[24h]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+        "type": "stat",
+        "title": "Total Users Created (Today)",
+        "targets": [
+          {
+            "expr": "sum(increase(http_requests_total{handler=\"/users\",method=\"POST\",status=\"2xx\"}[24h]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+        "type": "stat",
+        "title": "Notifications Sent (Today)",
+        "targets": [
+          {
+            "expr": "sum(increase(http_requests_total{job=\"notification-service\",handler!=\"/metrics\"}[24h]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "type": "timeseries",
+        "title": "Error Rate by Service",
+        "targets": [
+          {
+            "expr": "sum by (job) (rate(http_requests_total{status=~\"4xx|5xx\"}[1m]))",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "type": "gauge",
+        "title": "Success Rate (%)",
+        "targets": [
+          {
+            "expr": "(sum(rate(http_requests_total{status=\"2xx\"}[5m])) / sum(rate(http_requests_total[5m]))) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": true,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 90, "color": "yellow"},
+                {"value": 95, "color": "green"}
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "refresh": "10s",
+    "time": {"from": "now-1h", "to": "now"},
+    "schemaVersion": 36
+  }
+}
