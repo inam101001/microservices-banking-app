@@ -371,7 +371,6 @@ prometheus-server-6f47c5cd6f-8ltdk               2/2     Running   0          19
 
 **Services Created:**
 
-**Deployment:**
 ```bash
 kubectl get svc -n monitoring
 
@@ -730,77 +729,6 @@ kubectl port-forward -n monitoring svc/prometheus-server 9090:80
 
 **Test 3: Verify Grafana Dashboards**
 
-# Load into KIND cluster
-kind load docker-image inam101001/transaction-service:dev --name microbank
-kind load docker-image inam101001/notification-service:dev --name microbank
-
-# Restart deployments
-kubectl rollout restart deployment/transaction-service -n microservices
-kubectl rollout restart deployment/notification-service -n microservices
-```
-
-### Architecture After Phase 5
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     HTTP Request Flow                        │
-└──────────────────────────────────────────────────────────────┘
-   Frontend → Ingress → Transaction Service → Account Service
-                             │
-                             ├─► PostgreSQL (save transaction)
-                             │
-                             └─► RabbitMQ (publish event)
-                                      │
-                                      │ async
-                                      v
-┌──────────────────────────────────────────────────────────────┐
-│                   Message Queue Flow                         │
-└──────────────────────────────────────────────────────────────┘
-                              RabbitMQ
-                                 │
-                    Exchange: banking_events (topic)
-                                 │
-                    Queue: notifications (durable)
-                                 │
-                    Routing Key: transaction.completed
-                                 │
-                                 v
-                        Notification Service
-                                 │
-                                 └─► PostgreSQL (save notification)
-```
-
-### Message Flow Sequence
-
-```
-1. User initiates transaction
-   POST /api/transactions
-   
-2. Transaction Service:
-   a) Validates account
-   b) Updates balance
-   c) Saves transaction to DB
-   d) ✅ Publishes message to RabbitMQ
-   e) Returns 200 OK immediately
-   
-3. RabbitMQ:
-   a) Receives message
-   b) Routes to 'notifications' queue
-   c) Persists message to disk
-   
-4. Notification Service (async):
-   a) Consumes message from queue
-   b) Creates notification in DB
-   c) Acknowledges message
-   
-5. User queries notifications
-   GET /api/notifications
-   → Sees the notification
-```
-
-### Validation & Testing
-
-**Test 1: Deposit Transaction**
 ```bash
 # Access Grafana
 kubectl port-forward -n monitoring svc/grafana 3000:80
@@ -2069,10 +1997,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
 **Base Image Size:** ~150 MB
 **Final Image Size:** ~450 MB (with dependencies)
 
-**2. Reliability**
-- Messages persisted to disk (durable queues)
-- Automatic retry on failure
-- Message acknowledgment ensures processing
+##### Account Service (Port 8002)
 
 **File:** `account_service/Dockerfile`
 
@@ -2086,10 +2011,7 @@ ENV PYTHONUNBUFFERED=1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]
 ```
 
-**4. Performance**
-- Transaction API responds immediately
-- Notification processing happens asynchronously
-- No blocking calls between services
+##### Transaction Service (Port 8003)
 
 **File:** `transaction_service/Dockerfile`
 
@@ -2104,7 +2026,7 @@ ENV PYTHONUNBUFFERED=1
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
 ```
 
-#### Issue 1: Services Can't Connect to RabbitMQ
+##### Notification Service (Port 8004)
 
 **File:** `notification_service/Dockerfile`
 
@@ -2450,7 +2372,11 @@ spec:
 ##### PersistentVolumeClaim
 
 ```yaml
-# Example: k8s/manifests/user-service/deployment.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-postgres-pvc
+  namespace: microservices
 spec:
   accessModes:
     - ReadWriteOnce
@@ -2884,59 +2810,42 @@ stringData:
   password: <secure-password>
 ```
 
-**Test 2: Verify Prometheus Scraping**
+---
 
+## Phase 4: Ingress Controller for Unified Access
+
+### Objective
+
+Install and configure NGINX Ingress Controller to provide unified HTTP access to all microservices and frontend through a single entry point (`http://microbank.local`).
+
+### Completed Tasks
+
+#### 1. Ingress Controller Installation
+
+**Installation Method:** Helm with KIND-specific configuration
 ```bash
-# Access Prometheus UI
-kubectl port-forward -n monitoring svc/prometheus-server 9090:80
-
-# Visit: http://localhost:9090/targets
-# Expected: All 4 services showing State: UP
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace microservices \
+  --set controller.hostPort.enabled=true \
+  --set controller.hostPort.ports.http=80 \
+  --set controller.hostPort.ports.https=443 \
+  --set controller.service.type=NodePort \
+  --set controller.nodeSelector."kubernetes\.io/hostname"=microbank-control-plane \
+  --set-string controller.tolerations[0].key="node-role.kubernetes.io/control-plane" \
+  --set-string controller.tolerations[0].operator="Exists" \
+  --set-string controller.tolerations[0].effect="NoSchedule"
 ```
 
-**Test 3: Verify Grafana Dashboards**
+**Key Configuration:**
+- `hostPort.enabled=true`: Binds ports 80/443 directly to the node
+- `nodeSelector`: Schedules controller on control-plane node (where ports are mapped)
+- `tolerations`: Allows pod to run on control-plane despite taint
 
-```bash
-# Access Grafana
-kubectl port-forward -n monitoring svc/grafana 3000:80
+#### 2. Ingress Resources
 
-# Visit: http://localhost:3000
-# Login: admin/admin
-# Navigate to dashboards
-# Expected: All panels showing data
-```
+Created two separate Ingress resources for proper path handling:
 
-**Test 4: End-to-End Metrics Flow**
-
-```bash
-# Generate traffic
-./generate-traffic.sh
-
-# Check Prometheus (http://localhost:9090/graph)
-# Query: rate(http_requests_total[1m])
-# Expected: Non-zero values for all services
-
-# Check Grafana dashboards
-# Expected: Graphs updating in real-time
-```
-
-**Test Results:** ✅ All Passed
-- All services exposing /metrics successfully
-- Prometheus scraping all targets
-- Grafana displaying metrics in dashboards
-- Real-time updates working
-- Business KPIs tracking correctly
-
-### Useful Prometheus Queries
-
-**Request Rate:**
-```promql
-# Total requests per second across all services
-sum(rate(http_requests_total[1m]))
-
-# Per service
-rate(http_requests_total{job="user-service"}[1m])
-```
+**File:** `k8s/ingress.yaml`
 
 **API Ingress (with path rewriting):**
 ```yaml
@@ -3020,151 +2929,172 @@ spec:
   type: ClusterIP  # Ingress handles external access
 ```
 
-**Latency:**
-```promql
-# Average response time
-rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m])
-
-# 95th percentile
-histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+**Nginx Configuration:**
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+    
+    # Serve static files directly
+    location ~* ^/(static|manifest\.json|favicon\.ico|logo.*\.png) {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # For all other requests, serve index.html (for React Router)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
 ```
 
-**Resource Usage:**
-```promql
-# Memory per service
-process_resident_memory_bytes{job=~".*-service"}
+**API URL Updates:**
+Changed from absolute URLs to relative URLs:
+- Before: `http://localhost/api/users`
+- After: `/api/users`
 
-# CPU utilization
-rate(process_cpu_seconds_total{job=~".*-service"}[1m])
+This allows the frontend to work from any domain.
+
+#### 4. Inter-Service Communication Fix
+
+**Updated Services:**
+- `account_service/app/main.py`: Changed `127.0.0.1:8001` → `user-service:8001`
+- `transaction_service/app/main.py`: Changed `127.0.0.1:8002` → `account-service:8002`
+
+Services now use Kubernetes DNS names for communication.
+
+#### 5. Hostname Configuration
+
+**WSL Ubuntu (for API/CLI access):**
+```bash
+sudo bash -c 'echo "127.0.0.1 microbank.local" >> /etc/hosts'
 ```
 
-**Business Metrics:**
-```promql
-# Transactions per hour
-sum(rate(http_requests_total{handler="/transactions",method="POST"}[1h])) * 3600
-
-# Active users (based on API calls)
-count(count by (instance) (http_requests_total{job="user-service"}))
+**Windows (for browser access):**
+```powershell
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Value "127.0.0.1 microbank.local"
 ```
 
-### Monitoring Stack Components
+### Architecture After Phase 4
+```
+                    Browser (http://microbank.local)
+                                |
+                                v
+                    +------------------------+
+                    |  NGINX Ingress        |
+                    |  Controller           |
+                    |  (control-plane:80)   |
+                    +------------------------+
+                         |              |
+              /api/*     |              |    /
+                         |              |
+           +-------------+              +-------------+
+           |                                         |
+           v                                         v
+    +--------------+                         +-------------+
+    | API Services |                         |  Frontend   |
+    |              |                         |  (React)    |
+    | - Users      |                         |             |
+    | - Accounts   |                         |  Nginx:80   |
+    | - Trans...   |                         +-------------+
+    | - Notif...   |
+    +--------------+
+           |
+           v
+    +--------------+
+    |  PostgreSQL  |
+    |  (per svc)   |
+    +--------------+
+```
 
-| Component | Version | Purpose | Pods | Storage |
-|-----------|---------|---------|------|---------|
-| Prometheus Server | 2.x | Metrics collection & storage | 1 | 5Gi PVC |
-| Grafana | Latest | Visualization & dashboards | 1 | 5Gi PVC |
-| Kube State Metrics | Latest | Kubernetes cluster metrics | 1 | None |
-| Node Exporter | Latest | Node-level system metrics | 3 | None |
-| **Total** | | | **6 pods** | **10Gi** |
+### URL Structure
 
-### Key Benefits Achieved
+| Resource | URL | Backend |
+|----------|-----|---------|
+| Frontend | http://microbank.local/ | frontend:80 |
+| Users API | http://microbank.local/api/users | user-service:8001 |
+| Accounts API | http://microbank.local/api/accounts | account-service:8002 |
+| Transactions API | http://microbank.local/api/transactions | transaction-service:8003 |
+| Notifications API | http://microbank.local/api/notifications | notification-service:8004 |
 
-**1. Observability**
-- Real-time visibility into service health
-- Historical metrics for trend analysis
-- Quick identification of performance issues
+### Path Rewriting Example
 
-**2. Performance Monitoring**
-- Request rates and latency tracking
-- Resource utilization monitoring (CPU, memory)
-- Error rate tracking per service
+**Request:** `http://microbank.local/api/users/123`
+- Ingress receives: `/api/users/123`
+- Regex captures: `users/123`
+- Forwards to backend: `user-service:8001/users/123`
 
-**3. Business Insights**
-- Transaction volume tracking
-- User growth metrics
-- Notification delivery rates
+### Validation
+```bash
+# Health checks
+curl http://microbank.local/api/users
+curl http://microbank.local/api/accounts
+curl http://microbank.local/api/transactions
+curl http://microbank.local/api/notifications
 
-**4. Proactive Issue Detection**
-- Service health status at a glance
-- Error spike detection
-- Resource exhaustion warnings
+# Frontend
+curl http://microbank.local/
 
-**5. Debugging & Troubleshooting**
-- Detailed endpoint-level metrics
-- Service-to-service communication visibility
-- Historical data for root cause analysis
+# Static files
+curl http://microbank.local/static/js/main.06e64544.js
+```
+
+**All endpoints return HTTP 200** ✅
 
 ### Troubleshooting Guide
 
-#### Issue 1: Metrics Endpoint Returns 404
+#### Issue 1: Static Files Return HTML
 
-**Symptom:** `curl http://localhost:8001/metrics` returns `{"detail":"Not Found"}`
+**Symptom:** JavaScript files return 644 bytes (index.html size)
 
-**Diagnosis:**
-```bash
-# Check if pod has the instrumented code
-kubectl exec -n microservices deployment/user-service -- cat /app/app/main.py | head -20
+**Cause:** Ingress applying rewrite to all paths
 
-# Verify Instrumentator is imported
-kubectl exec -n microservices deployment/user-service -- python -c "from prometheus_fastapi_instrumentator import Instrumentator; print('OK')"
-```
+**Solution:** Split into two ingress resources (API with rewrite, frontend without)
 
-**Solution:**
-- Ensure Prometheus libraries are in requirements.txt
-- Verify `Instrumentator().instrument(app).expose(app)` is in main.py
-- Rebuild Docker image with `--no-cache` flag
-- Add `imagePullPolicy: Always` to deployment
-- Restart deployment
+#### Issue 2: Browser Cache Shows Old Version
 
-#### Issue 2: Prometheus Not Scraping Services
+**Symptom:** Frontend shows white screen or old behavior
 
-**Symptom:** Targets show as "DOWN" in Prometheus UI
+**Solution:** 
+- Hard refresh: Ctrl + Shift + R
+- Clear cache: Ctrl + Shift + Delete
+- Use incognito mode
 
-**Diagnosis:**
-```bash
-# Check if Prometheus can reach service
-kubectl exec -n monitoring deployment/prometheus-server -- wget -O- http://user-service.microservices.svc.cluster.local:8001/metrics
+#### Issue 3: CORS Errors with localhost
 
-# Check Prometheus logs
-kubectl logs -n monitoring deployment/prometheus-server -c prometheus-server | grep user-service
-```
+**Symptom:** `Access-Control-Allow-Origin` errors
 
-**Common Causes:**
-- Incorrect service DNS name in scrape config
-- Service not running or not ready
-- Network policy blocking traffic
-- Metrics endpoint not exposed
+**Cause:** Frontend using absolute URLs (`http://localhost/api/*`)
 
-**Solution:**
-- Verify service is running: `kubectl get pods -n microservices`
-- Check service DNS: `kubectl get svc -n microservices`
-- Verify scrape config: `kubectl get cm prometheus-server -n monitoring -o yaml`
-- Re-apply patch script if needed
+**Solution:** Use relative URLs (`/api/*`)
 
-#### Issue 3: Grafana Dashboards Show "No Data"
+#### Issue 4: Ingress Controller Not Scheduling
 
-**Symptom:** All panels in Grafana dashboard are empty
+**Symptom:** Pod stays in Pending state
 
-**Diagnosis:**
-```bash
-# Check Prometheus data source in Grafana
-# Settings → Data Sources → Prometheus → Test
+**Cause:** Control-plane node has taint
 
-# Run query in Prometheus UI
-# http://localhost:9090/graph
-# Query: http_requests_total
-```
+**Solution:** Add toleration for `node-role.kubernetes.io/control-plane`
 
-**Common Causes:**
-- No traffic to services (no metrics generated)
-- Prometheus not scraping yet (wait 15 seconds)
-- Incorrect Prometheus URL in Grafana
-- Wrong label names in dashboard queries
+### Lessons Learned
 
-**Solution:**
-- Generate traffic: `./generate-traffic.sh`
-- Wait 30 seconds for Prometheus to scrape
-- Verify data source URL: `http://prometheus-server.monitoring.svc.cluster.local:80`
-- Check query syntax matches actual metric labels
+1. **KIND Limitations:** LoadBalancer services don't work in KIND - use hostPort with control-plane scheduling
+2. **Path Rewriting Complexity:** Separate ingresses for different rewrite needs
+3. **Browser Caching:** Always test with hard refresh or incognito mode
+4. **Service Communication:** Use Kubernetes DNS names, not localhost
+5. **Static File Serving:** Nginx location blocks must be ordered correctly
 
-#### Issue 4: Grafana Can't Connect to Prometheus
+### Key Metrics
 
-**Symptom:** Data source test fails with connection error
-
-**Diagnosis:**
-```bash
-# Test from Grafana pod
-kubectl exec -n monitoring deployment/grafana -- wget -O- http://prometheus-server.monitoring.svc.cluster.local:80/api/
+| Metric | Value |
+|--------|-------|
+| Ingress Pods | 1 |
+| Ingress Resources | 2 |
+| Response Time (avg) | <5ms |
+| Request Success Rate | 100% |
 
 ---
 
