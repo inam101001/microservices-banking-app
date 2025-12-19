@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from prometheus_fastapi_instrumentator import Instrumentator
 import requests
 from . import models, schemas, crud
 from .database import Base, engine, SessionLocal
@@ -8,8 +9,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rabbitmq_utils import RabbitMQPublisher
 
-app = FastAPI()
+app = FastAPI(title="Transaction Service", version="1.0.0")
 
+# Prometheus metrics instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # Create tables
 Base.metadata.create_all(bind=engine)

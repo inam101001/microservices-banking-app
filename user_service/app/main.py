@@ -1,12 +1,16 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
+from prometheus_fastapi_instrumentator import Instrumentator
 from . import models, schemas, crud
 from .database import Base, engine, SessionLocal
 
-app = FastAPI()
+app = FastAPI(title="User Service", version="1.0.0")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+# Prometheus metrics instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # Dependency to get DB session
 def get_db():

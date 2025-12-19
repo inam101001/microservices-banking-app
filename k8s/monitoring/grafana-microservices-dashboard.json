@@ -1,0 +1,182 @@
+{
+  "dashboard": {
+    "title": "Microservices Banking App - Overview",
+    "tags": ["microservices", "banking"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "timeseries",
+        "title": "Request Rate (req/sec)",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{job=\"user-service\"}[1m])",
+            "legendFormat": "User Service",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_requests_total{job=\"account-service\"}[1m])",
+            "legendFormat": "Account Service",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(http_requests_total{job=\"transaction-service\"}[1m])",
+            "legendFormat": "Transaction Service",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(http_requests_total{job=\"notification-service\"}[1m])",
+            "legendFormat": "Notification Service",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "timeseries",
+        "title": "Average Response Time (seconds)",
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_sum{job=\"user-service\"}[1m]) / rate(http_request_duration_seconds_count{job=\"user-service\"}[1m])",
+            "legendFormat": "User Service",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_request_duration_seconds_sum{job=\"account-service\"}[1m]) / rate(http_request_duration_seconds_count{job=\"account-service\"}[1m])",
+            "legendFormat": "Account Service",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(http_request_duration_seconds_sum{job=\"transaction-service\"}[1m]) / rate(http_request_duration_seconds_count{job=\"transaction-service\"}[1m])",
+            "legendFormat": "Transaction Service",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(http_request_duration_seconds_sum{job=\"notification-service\"}[1m]) / rate(http_request_duration_seconds_count{job=\"notification-service\"}[1m])",
+            "legendFormat": "Notification Service",
+            "refId": "D"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8},
+        "type": "stat",
+        "title": "Total Requests",
+        "targets": [
+          {
+            "expr": "sum(http_requests_total)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8},
+        "type": "stat",
+        "title": "Request Rate (All Services)",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[1m]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "type": "piechart",
+        "title": "Requests by Service",
+        "targets": [
+          {
+            "expr": "sum by (job) (http_requests_total)",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "values": ["value", "percent"]
+          }
+        }
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "type": "timeseries",
+        "title": "Requests by Status Code",
+        "targets": [
+          {
+            "expr": "sum by (status) (rate(http_requests_total[1m]))",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "type": "timeseries",
+        "title": "Requests by Handler",
+        "targets": [
+          {
+            "expr": "sum by (handler, job) (rate(http_requests_total{handler!=\"/metrics\"}[1m]))",
+            "legendFormat": "{{job}} - {{handler}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        }
+      }
+    ],
+    "refresh": "5s",
+    "time": {"from": "now-15m", "to": "now"},
+    "timepicker": {
+      "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]
+    },
+    "schemaVersion": 36
+  }
+}
