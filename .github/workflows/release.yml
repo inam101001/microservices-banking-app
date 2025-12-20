@@ -1,0 +1,159 @@
+name: Release Version
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  DOCKERHUB_USERNAME: inam101001
+
+jobs:
+  build-and-release:
+    name: Build and Release All Services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_number=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push user-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./user_service
+          file: ./user_service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/user-service:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/user-service:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/user-service:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/user-service:buildcache,mode=max
+
+      - name: Build and push account-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./account_service
+          file: ./account_service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/account-service:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/account-service:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/account-service:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/account-service:buildcache,mode=max
+
+      - name: Build and push transaction-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./transaction_service
+          file: ./transaction_service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/transaction-service:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/transaction-service:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/transaction-service:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/transaction-service:buildcache,mode=max
+
+      - name: Build and push notification-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./notification_service
+          file: ./notification_service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/notification-service:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/notification-service:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/notification-service:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/notification-service:buildcache,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/frontend:${{ steps.version.outputs.version }}
+            ${{ env.DOCKERHUB_USERNAME }}/frontend:latest
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/frontend:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_USERNAME }}/frontend:buildcache,mode=max
+
+      - name: Update manifests with version
+        run: |
+          # Update all deployment manifests with the new version tag
+          sed -i "s|image: ${{ env.DOCKERHUB_USERNAME }}/user-service:.*|image: ${{ env.DOCKERHUB_USERNAME }}/user-service:${{ steps.version.outputs.version }}|g" k8s/manifests/user-service/deployment.yaml
+          sed -i "s|image: ${{ env.DOCKERHUB_USERNAME }}/account-service:.*|image: ${{ env.DOCKERHUB_USERNAME }}/account-service:${{ steps.version.outputs.version }}|g" k8s/manifests/account-service/deployment.yaml
+          sed -i "s|image: ${{ env.DOCKERHUB_USERNAME }}/transaction-service:.*|image: ${{ env.DOCKERHUB_USERNAME }}/transaction-service:${{ steps.version.outputs.version }}|g" k8s/manifests/transaction-service/deployment.yaml
+          sed -i "s|image: ${{ env.DOCKERHUB_USERNAME }}/notification-service:.*|image: ${{ env.DOCKERHUB_USERNAME }}/notification-service:${{ steps.version.outputs.version }}|g" k8s/manifests/notification-service/deployment.yaml
+          sed -i "s|image: ${{ env.DOCKERHUB_USERNAME }}/frontend:.*|image: ${{ env.DOCKERHUB_USERNAME }}/frontend:${{ steps.version.outputs.version }}|g" k8s/manifests/frontend/deployment.yaml
+
+      - name: Commit and push version changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "release: update all services to ${{ steps.version.outputs.version }}"
+          file_pattern: 'k8s/manifests/*/deployment.yaml'
+          commit_user_name: GitHub Actions Bot
+          commit_user_email: actions@github.com
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## 🚀 Release ${{ steps.version.outputs.version }}
+            
+            ### Docker Images
+            - `${{ env.DOCKERHUB_USERNAME }}/user-service:${{ steps.version.outputs.version }}`
+            - `${{ env.DOCKERHUB_USERNAME }}/account-service:${{ steps.version.outputs.version }}`
+            - `${{ env.DOCKERHUB_USERNAME }}/transaction-service:${{ steps.version.outputs.version }}`
+            - `${{ env.DOCKERHUB_USERNAME }}/notification-service:${{ steps.version.outputs.version }}`
+            - `${{ env.DOCKERHUB_USERNAME }}/frontend:${{ steps.version.outputs.version }}`
+            
+            ### Deployment
+            All Kubernetes manifests have been updated to use this version.
+            ArgoCD will automatically sync these changes to your cluster.
+            
+            ### Rollback
+            To rollback to a previous version:
+            ```bash
+            git revert HEAD
+            git push
+            ```
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "### 🎉 Release ${{ steps.version.outputs.version }} Complete!"
+          echo ""
+          echo "**All services have been:**"
+          echo "✅ Built with version ${{ steps.version.outputs.version }}"
+          echo "✅ Pushed to DockerHub"
+          echo "✅ Updated in Kubernetes manifests"
+          echo "✅ Tagged as 'latest'"
+          echo ""
+          echo "**ArgoCD will now:**"
+          echo "- Detect the manifest changes"
+          echo "- Sync all services to the new version"
+          echo "- Perform rolling updates"
+          echo ""
+          echo "**Monitor deployment:**"
+          echo "- ArgoCD UI: http://localhost:8080"
+          echo "- kubectl get pods -n microservices -w"
