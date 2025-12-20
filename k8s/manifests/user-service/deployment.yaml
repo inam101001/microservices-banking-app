@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: user-service
-          image: inam101001/user-service:dev
+          image: inam101001/user-service:sha-9d82cc3a15ae8a52c604a1db21e71fa799b49eb1
           imagePullPolicy: Always
           ports:
             - containerPort: 8001
