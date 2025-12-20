@@ -18,7 +18,7 @@
 8. [Phase 4: Ingress Controller for Unified Access](#phase-4-ingress-controller-for-unified-access)
 9. [Phase 5: RabbitMQ Integration for Async Messaging](#phase-5-rabbitmq-integration-for-async-messaging)
 10. [Phase 6: Monitoring & Observability with Prometheus + Grafana](#phase-6-monitoring--observability-with-prometheus--grafana)
-11. [Phase 7: GitOps CI/CD Pipeline with GitHub Actions and ArgoCD]
+11. [Phase 7: GitOps CI/CD Pipeline with GitHub Actions and ArgoCD](#phase-7-gitops-cicd-pipeline-with-github-actions-and-argocd)
 
 ---
 
