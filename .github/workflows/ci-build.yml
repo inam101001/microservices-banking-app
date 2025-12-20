@@ -3,10 +3,10 @@ name: CI/CD Pipeline - Build and Deploy
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
     branches:
-      - main
+      - master
 
 env:
   DOCKERHUB_USERNAME: inam101001
@@ -294,7 +294,7 @@ jobs:
     if: |
       always() && 
       github.event_name == 'push' && 
-      github.ref == 'refs/heads/main' &&
+      github.ref == 'refs/heads/master' &&
       (needs.build-user-service.result == 'success' || 
        needs.build-account-service.result == 'success' || 
        needs.build-transaction-service.result == 'success' || 
