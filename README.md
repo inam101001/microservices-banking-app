@@ -5509,7 +5509,7 @@ Implement automated CI/CD pipeline using GitHub Actions for builds and ArgoCD fo
 
 ### Architecture Overview
 
-
+```
 ┌─────────────────────────────────────────────────────────────┐
 │  Developer Workflow                                         │
 └─────────────────────────────────────────────────────────────┘
